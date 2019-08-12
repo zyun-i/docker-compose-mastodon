@@ -1,0 +1,106 @@
+version: '3.0'
+
+services:
+
+  adminer:
+    image: adminer:4.7.1
+    restart: always
+    ports:
+      - 8080:8080
+    depends_on:
+      - db
+
+  minio:
+    image: minio/minio:RELEASE.2019-07-24T02-02-23Z
+    restart: always
+    ports:
+      - 9000:9000
+    volumes:
+      - ./minio:/data
+    command: server /data
+
+  es:
+    image: docker.elastic.co/elasticsearch/elasticsearch:6.8.1
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - ./elasticsearch:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail localhost:9200/_cluster/health || exit 1"]
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - 9200:9200
+
+  db:
+    image:  zyun1/postgres-wal-g:latest
+    restart: always
+    env_file: .env.production.postgres
+    ports:
+      - 5432:5432
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+      - ./my-postgres.conf:/etc/postgresql/postgresql.conf
+    command: ["-c", "config_file=/etc/postgresql/postgresql.conf"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+
+  redis:
+    image: redis:4.0-alpine
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+    volumes:
+      - ./redis:/data
+    ports:
+      - 6379:6379
+
+  web:
+    image: mastodon
+    restart: always
+    env_file: .env.production
+    command: bash -c "rm -f /mastodon/tmp/pids/server.pid; bundle exec rails s -p 3000 -b '0.0.0.0'"
+    ports:
+      - 3000:3000
+    depends_on:
+      - db
+      - redis
+      - es
+      - minio
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider --header 'x-forwarded-proto: https' --proxy=off localhost:3000/api/v1/instance || exit 1"]
+    volumes:
+      - ./public/system:/mastodon/public/system
+
+  streaming:
+    image: mastodon
+    restart: always
+    env_file: .env.production
+    command: node ./streaming
+    ports:
+      - 4000:4000
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider --header 'x-forwarded-proto: https' --proxy=off localhost:4000/api/v1/streaming/health || exit 1"]
+    depends_on:
+      - db
+      - redis
+
+  sidekiq:
+    image: mastodon
+    restart: always
+    env_file: .env.production
+    command: bundle exec sidekiq
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./public/system:/mastodon/public/system
+
+networks:
+  default:
+    external:
+      name: bridge6

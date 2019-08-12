@@ -1,0 +1,9 @@
+.env.production
+.env.production.postgres
+
+# docker data dir.
+minio/
+elasticsearch/
+postgres/
+redis/
+public/
