@@ -1,0 +1,11 @@
+[Unit]
+Description=Do some thing
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/mastodon/docker-compose-mastodon
+ExecStart=%h/mastodon/docker-compose-mastodon/backup.sh all_backup
+
+[Install]
+WantedBy=default.target
